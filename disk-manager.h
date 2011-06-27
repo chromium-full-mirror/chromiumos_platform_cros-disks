@@ -81,8 +81,16 @@ class DiskManager {
   // /proc/filesystems.
   std::vector<std::string> GetFilesystems(std::istream& stream) const;
 
+  // Returns true if a string is found in an array of strings.
+  bool IsStringInStringArray(const std::string& str,
+      const char* const* str_array, size_t str_array_len) const;
+
   // Checks if a filesystem supports user ID and group ID in mount options.
   bool IsMountUserAndGroupIdSupportedByFilesystem(
+      const std::string& filesystem_type) const;
+
+  // Checks if a filesystem supports the utf8 flag in mount options.
+  bool IsUTF8FlagSupportedByFilesystem(
       const std::string& filesystem_type) const;
 
   // Gets the user ID and group ID for a given username.

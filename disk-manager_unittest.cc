@@ -9,6 +9,7 @@
 #include <sstream>
 
 #include <base/logging.h>
+#include <base/string_util.h>
 #include <gtest/gtest.h>
 
 #include "cros-disks/disk.h"
@@ -95,6 +96,20 @@ TEST_F(DiskManagerTest, GetFilesystemsFromStream) {
   }
 }
 
+TEST_F(DiskManagerTest, IsStringInStringArray) {
+  DiskManager manager;
+  const char* str_array[] = {
+    "this", "is", "a", "string", "array"
+  };
+  size_t len = arraysize(str_array);
+  EXPECT_TRUE(manager.IsStringInStringArray("this", str_array, len));
+  EXPECT_TRUE(manager.IsStringInStringArray("is", str_array, len));
+  EXPECT_TRUE(manager.IsStringInStringArray("a", str_array, len));
+  EXPECT_TRUE(manager.IsStringInStringArray("string", str_array, len));
+  EXPECT_TRUE(manager.IsStringInStringArray("array", str_array, len));
+  EXPECT_FALSE(manager.IsStringInStringArray("nonexistent", str_array, len));
+}
+
 TEST_F(DiskManagerTest, IsMountUserAndGroupIdSupportedByFilesystem) {
   DiskManager manager;
   EXPECT_FALSE(manager.IsMountUserAndGroupIdSupportedByFilesystem("ext2"));
@@ -109,6 +124,59 @@ TEST_F(DiskManagerTest, IsMountUserAndGroupIdSupportedByFilesystem) {
   EXPECT_TRUE(manager.IsMountUserAndGroupIdSupportedByFilesystem("hfs"));
   EXPECT_TRUE(manager.IsMountUserAndGroupIdSupportedByFilesystem("hfsplus"));
   EXPECT_TRUE(manager.IsMountUserAndGroupIdSupportedByFilesystem("hpfs"));
+}
+
+TEST_F(DiskManagerTest, IsUTF8FlagSupportedByFilesystem) {
+  DiskManager manager;
+  EXPECT_FALSE(manager.IsUTF8FlagSupportedByFilesystem("ext2"));
+  EXPECT_FALSE(manager.IsUTF8FlagSupportedByFilesystem("ext3"));
+  EXPECT_FALSE(manager.IsUTF8FlagSupportedByFilesystem("ext4"));
+  EXPECT_FALSE(manager.IsUTF8FlagSupportedByFilesystem("fat"));
+  EXPECT_TRUE(manager.IsUTF8FlagSupportedByFilesystem("vfat"));
+  EXPECT_FALSE(manager.IsUTF8FlagSupportedByFilesystem("msdos"));
+  EXPECT_TRUE(manager.IsUTF8FlagSupportedByFilesystem("ntfs"));
+  EXPECT_TRUE(manager.IsUTF8FlagSupportedByFilesystem("iso9660"));
+  EXPECT_TRUE(manager.IsUTF8FlagSupportedByFilesystem("udf"));
+  EXPECT_FALSE(manager.IsUTF8FlagSupportedByFilesystem("hfs"));
+  EXPECT_FALSE(manager.IsUTF8FlagSupportedByFilesystem("hfsplus"));
+  EXPECT_FALSE(manager.IsUTF8FlagSupportedByFilesystem("hpfs"));
+}
+
+TEST_F(DiskManagerTest, ModifyMountOptionsForFilesystem) {
+  DiskManager manager;
+  uid_t uid;
+  gid_t gid;
+  bool found_uid_gid = manager.GetUserAndGroupId("chronos", &uid, &gid);
+
+  std::string expected_options, modified_options;
+
+  // Test the case when both the uid/gid, utf8 and shortname options are added
+  expected_options = (found_uid_gid) ?
+    StringPrintf("ro,uid=%d,gid=%d,utf8,shortname=mixed", uid, gid) :
+    "ro,utf8,shortname=mixed";
+  modified_options = manager.ModifyMountOptionsForFilesystem("vfat", "ro");
+  EXPECT_EQ(expected_options, modified_options);
+
+  // Test the case when both the uid/gid and utf8 options are added
+  expected_options = (found_uid_gid) ?
+    StringPrintf("ro,uid=%d,gid=%d,utf8", uid, gid) : "ro,utf8";
+  modified_options = manager.ModifyMountOptionsForFilesystem("udf", "ro");
+  EXPECT_EQ(expected_options, modified_options);
+
+  // Test the case when only the uid/gid option is added
+  expected_options = (found_uid_gid) ?
+    StringPrintf("ro,uid=%d,gid=%d", uid, gid) : "ro";
+  modified_options = manager.ModifyMountOptionsForFilesystem("fat", "ro");
+  EXPECT_EQ(expected_options, modified_options);
+
+  // Test the case when no option is added
+  expected_options = "ro";
+  modified_options = manager.ModifyMountOptionsForFilesystem("ext2", "ro");
+  EXPECT_EQ(expected_options, modified_options);
+
+  expected_options = "";
+  modified_options = manager.ModifyMountOptionsForFilesystem("ext2", "");
+  EXPECT_EQ(expected_options, modified_options);
 }
 
 TEST_F(DiskManagerTest, GetUserAndGroupIdForRoot) {

@@ -10,7 +10,6 @@
 
 #include <algorithm>
 #include <fstream>
-#include <sstream>
 #include <vector>
 
 #include <base/logging.h>
@@ -47,11 +46,13 @@ static const char kUdevChangeAction[] = "change";
 static const char kUdevRemoveAction[] = "remove";
 static const unsigned kMaxNumMountTrials = 10000;
 static const unsigned kFallbackPasswordBufferSize = 16384;
+static const char* const kFilesystemsWithUTF8Flag[] = {
+  "vfat", "ntfs", "iso9660", "udf",
+};
 static const char* const kFilesystemsWithMountUserAndGroupId[] = {
   "fat", "vfat", "msdos", "ntfs",
   "iso9660", "udf",
   "hfs", "hfsplus", "hpfs",
-  NULL
 };
 
 DiskManager::DiskManager()
@@ -449,31 +450,51 @@ bool DiskManager::ExtractUnmountOptions(
   return true;
 }
 
-bool DiskManager::IsMountUserAndGroupIdSupportedByFilesystem(
-    const std::string& filesystem_type) const {
-  for (const char* const* filesystem = kFilesystemsWithMountUserAndGroupId;
-      *filesystem; ++filesystem) {
-    if (strcmp(filesystem_type.c_str(), *filesystem) == 0) {
+bool DiskManager::IsStringInStringArray(const std::string& str,
+    const char* const* str_array, size_t str_array_len) const {
+  for (size_t i = 0; i < str_array_len; ++i) {
+    if (str == str_array[i]) {
       return true;
     }
   }
   return false;
 }
 
+bool DiskManager::IsMountUserAndGroupIdSupportedByFilesystem(
+    const std::string& filesystem_type) const {
+  return IsStringInStringArray(filesystem_type,
+      kFilesystemsWithMountUserAndGroupId,
+      arraysize(kFilesystemsWithMountUserAndGroupId));
+}
+
+bool DiskManager::IsUTF8FlagSupportedByFilesystem(
+    const std::string& filesystem_type) const {
+  return IsStringInStringArray(filesystem_type,
+      kFilesystemsWithUTF8Flag,
+      arraysize(kFilesystemsWithUTF8Flag));
+}
+
 std::string DiskManager::ModifyMountOptionsForFilesystem(
     const std::string& filesystem_type, const std::string& options) const {
-  std::stringstream extended_options(options);
+  std::vector<std::string> extended_options;
+  if (!options.empty()) {
+    extended_options.push_back(options);
+  }
   if (IsMountUserAndGroupIdSupportedByFilesystem(filesystem_type)) {
     uid_t uid;
     gid_t gid;
     if (GetUserAndGroupId(kMountDefaultUser, &uid, &gid)) {
-      if (!options.empty()) {
-        extended_options << ",";
-      }
-      extended_options << "uid=" << uid << ",gid=" << gid;
+      extended_options.push_back(StringPrintf("uid=%d", uid));
+      extended_options.push_back(StringPrintf("gid=%d", gid));
     }
   }
-  return extended_options.str();
+  if (IsUTF8FlagSupportedByFilesystem(filesystem_type)) {
+    extended_options.push_back("utf8");
+  }
+  if (filesystem_type == "vfat") {
+    extended_options.push_back("shortname=mixed");
+  }
+  return JoinString(extended_options, ',');
 }
 
 bool DiskManager::DoMount(const std::string& device_file,
